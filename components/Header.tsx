@@ -23,10 +23,10 @@ export default function Header() {
   
   return (
     <header className="fixed top-0 left-0 w-full z-50 border-b-2 border-neon-green bg-cyber-black/90 backdrop-blur-sm">
-      <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+      <div className="container mx-auto px-3 sm:px-4 py-2 sm:py-4 flex justify-between items-center">
         <motion.a
           href="#"
-          className="font-pixel text-xl md:text-2xl cursor-pointer hover:opacity-80 transition-opacity"
+          className="font-pixel text-base sm:text-xl md:text-2xl cursor-pointer hover:opacity-80 transition-opacity touch-manipulation"
           initial={{ opacity: 0, x: -50 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5 }}
@@ -48,7 +48,7 @@ export default function Header() {
         </motion.a>
         
         <motion.div 
-          className="font-terminal text-sm md:text-lg text-neon-purple"
+          className="font-terminal text-xs sm:text-sm md:text-lg text-neon-purple"
           initial={{ opacity: 0, x: 50 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
