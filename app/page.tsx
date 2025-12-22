@@ -133,13 +133,13 @@ export default function Home() {
             </h2>
             <div className="font-terminal text-xl md:text-2xl text-white space-y-4">
               <p className="text-neon-green">
-                {'>'} We're a studio labs company that builds apps and software.
+                {'>'} We&apos;re a studio labs company that builds apps and software.
               </p>
               <p className="text-neon-blue">
-                {'>'} We use AI, but we call it "Human Intelligence" because irony is fun.
+                {'>'} We use AI, but we call it &quot;Human Intelligence&quot; because irony is fun.
               </p>
               <p className="text-neon-yellow">
-                {'>'} We don't do corporate. We do chaotic-good.
+                {'>'} We don&apos;t do corporate. We do chaotic-good.
               </p>
               <p className="text-neon-purple">
                 {'>'} We build the future, one bug at a time. 🐛
