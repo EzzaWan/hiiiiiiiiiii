@@ -179,70 +179,31 @@ export default function Game() {
 
     // Init Canvas Visuals - matching site colors
     if (canvasRef.current) {
-      const container = canvasRef.current.parentElement
-      const width = container?.clientWidth || 800
-      const height = window.innerWidth < 640 ? 400 : window.innerWidth < 768 ? 450 : 500
-      
-      canvasRef.current.width = width
-      canvasRef.current.height = height
+      canvasRef.current.width = 800
+      canvasRef.current.height = 500
       const ctx = canvasRef.current.getContext('2d')
       if (ctx) {
-        const groundY = height - 100
-        ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,width,height);
+        ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,800,500);
         ctx.strokeStyle = '#00ff41'; ctx.lineWidth = 4; 
-        ctx.beginPath(); ctx.moveTo(0, groundY + 40); ctx.lineTo(width, groundY + 40); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 400); ctx.lineTo(800, 400); ctx.stroke();
         
         // Grid pattern like site
         ctx.strokeStyle = 'rgba(0, 255, 65, 0.2)'
         ctx.lineWidth = 1
-        for (let i = 0; i < width; i += 30) {
+        for (let i = 0; i < 800; i += 30) {
           ctx.beginPath()
-          ctx.moveTo(i, groundY + 40)
-          ctx.lineTo(i + 15, height)
+          ctx.moveTo(i, 400)
+          ctx.lineTo(i + 15, 500)
           ctx.stroke()
         }
       }
     }
-    
-    // Handle window resize and orientation change
-    const handleResize = () => {
-      const canvas = canvasRef.current
-      if (!canvas) return
-      
-      const container = canvas.parentElement
-      const width = container?.clientWidth || 800
-      const height = window.innerWidth < 640 ? 400 : window.innerWidth < 768 ? 450 : 500
-      
-      canvas.width = width
-      canvas.height = height
-      
-      if (!gameStarted) {
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          const groundY = height - 100
-          ctx.fillStyle = '#0a0a0a'
-          ctx.fillRect(0, 0, width, height)
-          ctx.strokeStyle = '#00ff41'
-          ctx.lineWidth = 4
-          ctx.beginPath()
-          ctx.moveTo(0, groundY + 40)
-          ctx.lineTo(width, groundY + 40)
-          ctx.stroke()
-        }
-      }
-    }
-    
-    window.addEventListener('resize', handleResize)
-    window.addEventListener('orientationchange', () => {
-      setTimeout(handleResize, 100)
-    })
     
     // Cleanup loop on unmount
     return () => {
-      window.removeEventListener('resize', handleResize)
-      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current)
+        if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current)
     }
-  }, [gameStarted])
+  }, [])
 
   const startGame = () => {
     setGameStarted(true)
@@ -274,26 +235,23 @@ export default function Game() {
 
     const s = state.current
     const now = Date.now()
-    const width = canvas.width
-    const height = canvas.height
-    const groundY = height - 100
 
     // 1. Clear & Background - matching site
     ctx.fillStyle = '#0a0a0a'
-    ctx.fillRect(0, 0, width, height)
+    ctx.fillRect(0, 0, 800, 500)
     
     // Floor
     ctx.strokeStyle = '#00ff41'
     ctx.lineWidth = 4
-    ctx.beginPath(); ctx.moveTo(0, groundY + 40); ctx.lineTo(width, groundY + 40); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 400); ctx.lineTo(800, 400); ctx.stroke();
     
     // Grid pattern
     ctx.strokeStyle = 'rgba(0, 255, 65, 0.2)'
     ctx.lineWidth = 1
-    for (let i = 0; i < width; i += 30) {
+    for (let i = 0; i < 800; i += 30) {
       ctx.beginPath()
-      ctx.moveTo(i - (s.score % 30), groundY + 40)
-      ctx.lineTo(i - (s.score % 30) + 15, height)
+      ctx.moveTo(i - (s.score % 30), 400)
+      ctx.lineTo(i - (s.score % 30) + 15, 500)
       ctx.stroke()
     }
 
@@ -301,8 +259,8 @@ export default function Game() {
     s.player.velocity += 0.6 // Gravity
     s.player.y += s.player.velocity
     
-    if (s.player.y > groundY - 40) { 
-      s.player.y = groundY - 40
+    if (s.player.y > 360) { 
+      s.player.y = 360
       s.player.velocity = 0
       s.player.jumping = false
     }
@@ -317,8 +275,8 @@ export default function Game() {
     if (timeSinceLast > Math.max(600, minTimeGap)) { 
        if (Math.random() > 0.6) { 
            s.obstacles.push({
-             x: width,
-             y: Math.random() > 0.75 ? (groundY - 140) : (groundY - 40), 
+             x: 800,
+             y: Math.random() > 0.75 ? 260 : 360, 
              width: 40,
              height: 40
            })
@@ -350,14 +308,13 @@ export default function Game() {
     if (s.score % 1000 === 0) s.speed += 0.5 
     setScore(Math.floor(s.score / 10))
     
-    // Text - matching site font and style (responsive font size)
-    const fontSize = width < 640 ? 12 : width < 768 ? 16 : 20
-    ctx.font = `${fontSize}px "Press Start 2P"`
+    // Text - matching site font and style
+    ctx.font = '20px "Press Start 2P"'
     ctx.fillStyle = '#00ff41'
     ctx.shadowBlur = 3
     ctx.shadowColor = '#00ff41'
-    ctx.fillText(`SCORE: ${Math.floor(s.score / 10)}`, 10, 30)
-    ctx.fillText(`HIGH: ${highScore}`, width - (fontSize * 12), 30)
+    ctx.fillText(`SCORE: ${Math.floor(s.score / 10)}`, 20, 40)
+    ctx.fillText(`HIGH: ${highScore}`, 680, 40)
     ctx.shadowBlur = 0
 
     // Keep loop going only if active
@@ -409,11 +366,22 @@ export default function Game() {
     }
   }
 
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        e.preventDefault()
+        jump()
+      }
+    }
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [gameStarted, gameOver])
+
   return (
-    <div className="relative w-full h-[400px] sm:h-[450px] md:h-[500px] border-2 sm:border-4 border-neon-green rounded-lg overflow-hidden bg-cyber-darker touch-none">
+    <div className="relative w-full h-[500px] border-4 border-neon-green rounded-lg overflow-hidden bg-cyber-darker">
       <canvas 
         ref={canvasRef}
-        className="w-full h-full block cursor-pointer touch-none"
+        className="w-full h-full block cursor-pointer"
         onMouseDown={jump}
         onTouchStart={(e) => {
           e.preventDefault()
@@ -431,32 +399,30 @@ export default function Game() {
             exit={{ opacity: 0, scale: 0.8 }}
             className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm"
           >
-            <h2 className="font-pixel text-xl sm:text-2xl md:text-3xl lg:text-4xl xl:text-5xl text-neon-purple neon-glow-purple mb-3 sm:mb-4 px-4">
+            <h2 className="font-pixel text-3xl md:text-5xl text-neon-purple neon-glow-purple mb-4">
               DEBUG OR DIE
             </h2>
-            <p className="font-terminal text-base sm:text-lg md:text-xl lg:text-2xl text-neon-green mb-4 sm:mb-6 md:mb-8 px-4">
+            <p className="font-terminal text-xl md:text-2xl text-neon-green mb-8">
               Press SPACE or TAP to start
             </p>
-            <div className="font-terminal text-sm sm:text-base md:text-lg text-neon-blue mb-4 px-4">
+            <div className="font-terminal text-lg text-neon-blue mb-4">
               <p>🧠 = Human Intelligence</p>
               <p>🐛 = Bugs to avoid</p>
             </div>
-            <div className="flex flex-col gap-2 sm:gap-3 px-4 w-full max-w-xs">
+            <div className="flex flex-col gap-3">
               <button 
                 onClick={startGame} 
-                className="arcade-button font-pixel text-sm sm:text-base md:text-lg px-6 sm:px-8 py-3 sm:py-4 text-black uppercase touch-manipulation min-h-[44px]"
+                className="arcade-button font-pixel text-lg px-8 py-4 text-black uppercase"
               >
                 Start Game
               </button>
-              {leaderboard.length > 0 && (
-                <button 
-                  onClick={() => setShowLeaderboard(true)} 
-                  className="bg-cyber-dark border-2 border-neon-purple font-pixel text-xs sm:text-sm px-4 sm:px-6 py-2.5 sm:py-3 text-neon-purple uppercase hover:bg-neon-purple hover:text-black transition-all flex items-center justify-center gap-2 touch-manipulation min-h-[44px]"
-                >
-                  <Trophy className="w-4 h-4" />
-                  View Leaderboard
-                </button>
-              )}
+              <button 
+                onClick={() => setShowLeaderboard(true)} 
+                className="bg-cyber-dark border-2 border-neon-purple font-pixel text-sm px-6 py-3 text-neon-purple uppercase hover:bg-neon-purple hover:text-black transition-all flex items-center justify-center gap-2"
+              >
+                <Trophy className="w-4 h-4" />
+                View Leaderboard
+              </button>
             </div>
           </motion.div>
         )}
@@ -471,7 +437,7 @@ export default function Game() {
             className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm z-20"
           >
             <motion.h2
-              className="font-pixel text-xl sm:text-2xl md:text-3xl lg:text-4xl xl:text-5xl text-red-500 mb-3 sm:mb-4 px-4"
+              className="font-pixel text-3xl md:text-5xl text-red-500 mb-4"
               animate={{ 
                 textShadow: [
                   '0 0 10px #ff0000',
@@ -483,32 +449,30 @@ export default function Game() {
             >
               SYSTEM FAILURE
             </motion.h2>
-            <p className="font-terminal text-lg sm:text-xl md:text-2xl lg:text-3xl text-neon-purple mb-2 px-4">
+            <p className="font-terminal text-2xl md:text-3xl text-neon-purple mb-2">
               Human Intelligence Failed.
             </p>
-            <p className="font-terminal text-base sm:text-lg md:text-xl lg:text-2xl text-neon-green mb-4 sm:mb-6 md:mb-8 px-4">
+            <p className="font-terminal text-xl md:text-2xl text-neon-green mb-8">
               Try AI? (Score: {score})
             </p>
-            <div className="text-center mb-4 sm:mb-6 md:mb-8 font-terminal text-sm sm:text-base md:text-lg px-4">
+            <div className="text-center mb-8 font-terminal text-lg">
               <p className="text-neon-green">SCORE: {score}</p>
               <p className="text-neon-yellow">HIGH: {highScore}</p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 px-4 w-full max-w-xs sm:max-w-none">
+            <div className="flex gap-4">
               <button 
                 onClick={startGame} 
-                className="arcade-button font-pixel text-sm sm:text-base md:text-lg px-6 sm:px-8 py-3 sm:py-4 text-black uppercase touch-manipulation min-h-[44px]"
+                className="arcade-button font-pixel text-lg px-8 py-4 text-black uppercase"
               >
                 Retry
               </button>
-              {leaderboard.length > 0 && (
-                <button 
-                  onClick={() => setShowLeaderboard(true)} 
-                  className="bg-cyber-dark border-2 border-neon-purple font-pixel text-sm sm:text-base md:text-lg px-6 sm:px-8 py-3 sm:py-4 text-neon-purple uppercase hover:bg-neon-purple hover:text-black transition-all flex items-center justify-center gap-2 touch-manipulation min-h-[44px]"
-                >
-                  <Trophy className="w-4 h-4 sm:w-5 sm:h-5" />
-                  Leaderboard
-                </button>
-              )}
+              <button 
+                onClick={() => setShowLeaderboard(true)} 
+                className="bg-cyber-dark border-2 border-neon-purple font-pixel text-lg px-8 py-4 text-neon-purple uppercase hover:bg-neon-purple hover:text-black transition-all flex items-center gap-2"
+              >
+                <Trophy className="w-5 h-5" />
+                Leaderboard
+              </button>
             </div>
           </motion.div>
         )}
@@ -524,30 +488,30 @@ export default function Game() {
             className="absolute inset-0 flex items-center justify-center bg-black/95 backdrop-blur-sm z-30"
           >
             <div className="bg-cyber-dark border-4 border-neon-green rounded-lg p-8 max-w-md w-full mx-4">
-              <h3 className="font-pixel text-lg sm:text-xl md:text-2xl text-neon-green mb-3 sm:mb-4 text-center px-4">
+              <h3 className="font-pixel text-2xl text-neon-green mb-4 text-center">
                 🏆 NEW HIGH SCORE! 🏆
               </h3>
-              <p className="font-terminal text-base sm:text-lg md:text-xl text-neon-blue mb-4 sm:mb-6 text-center px-4">
+              <p className="font-terminal text-xl text-neon-blue mb-6 text-center">
                 Score: {score}
               </p>
-              <p className="font-terminal text-sm sm:text-base md:text-lg text-white mb-3 sm:mb-4 text-center px-4">
+              <p className="font-terminal text-lg text-white mb-4 text-center">
                 Enter your name for the leaderboard:
               </p>
-              <form onSubmit={handleSubmitName} className="space-y-3 sm:space-y-4 px-4">
+              <form onSubmit={handleSubmitName} className="space-y-4">
                 <input
                   ref={nameInputRef}
                   type="text"
                   maxLength={15}
                   value={playerName}
                   onChange={(e) => setPlayerName(e.target.value.toUpperCase())}
-                  className="w-full bg-cyber-black border-2 border-neon-green text-neon-green font-terminal text-base sm:text-lg md:text-xl p-3 sm:p-4 focus:outline-none focus:border-neon-purple uppercase touch-manipulation min-h-[44px]"
+                  className="w-full bg-cyber-black border-2 border-neon-green text-neon-green font-terminal text-xl p-4 focus:outline-none focus:border-neon-purple uppercase"
                   placeholder="YOUR NAME"
                   autoFocus
                 />
-                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                <div className="flex gap-4">
                   <button
                     type="submit"
-                    className="arcade-button font-pixel text-sm sm:text-base md:text-lg px-6 sm:px-8 py-3 sm:py-4 text-black uppercase flex-1 touch-manipulation min-h-[44px]"
+                    className="arcade-button font-pixel text-lg px-8 py-4 text-black uppercase flex-1"
                   >
                     Submit
                   </button>
@@ -557,7 +521,7 @@ export default function Game() {
                       setShowNameInput(false)
                       setPlayerName('')
                     }}
-                    className="bg-cyber-dark border-2 border-neon-purple font-pixel text-sm sm:text-base md:text-lg px-4 sm:px-6 py-3 sm:py-4 text-neon-purple uppercase hover:bg-neon-purple hover:text-black transition-all touch-manipulation min-h-[44px]"
+                    className="bg-cyber-dark border-2 border-neon-purple font-pixel text-lg px-6 py-4 text-neon-purple uppercase hover:bg-neon-purple hover:text-black transition-all"
                   >
                     Skip
                   </button>
@@ -582,26 +546,26 @@ export default function Game() {
               initial={{ scale: 0.8, y: 50 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.8, y: 50 }}
-              className="bg-cyber-dark border-2 sm:border-4 border-neon-green rounded-lg p-4 sm:p-6 md:p-8 max-w-2xl w-full mx-4 max-h-[85vh] sm:max-h-[80vh] overflow-y-auto"
+              className="bg-cyber-dark border-4 border-neon-green rounded-lg p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex justify-between items-center mb-4 sm:mb-6">
-                <h2 className="font-pixel text-xl sm:text-2xl md:text-3xl text-neon-green flex items-center gap-2 sm:gap-3">
-                  <Trophy className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-neon-yellow" />
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="font-pixel text-3xl text-neon-green flex items-center gap-3">
+                  <Trophy className="w-8 h-8 text-neon-yellow" />
                   LEADERBOARD
                 </h2>
                 <button
                   onClick={() => setShowLeaderboard(false)}
-                  className="text-neon-green hover:text-neon-purple transition-colors touch-manipulation min-w-[44px] min-h-[44px] flex items-center justify-center"
+                  className="text-neon-green hover:text-neon-purple transition-colors"
                   aria-label="Close leaderboard"
                 >
-                  <X className="w-6 h-6 sm:w-7 sm:h-7" />
+                  <X className="w-6 h-6" />
                 </button>
               </div>
               
-              <div className="border-2 sm:border-4 border-neon-green rounded-lg overflow-hidden">
-                <div className="bg-cyber-black p-2 sm:p-3 md:p-4 border-b-2 border-neon-green">
-                  <div className="grid grid-cols-3 gap-2 sm:gap-3 md:gap-4 font-pixel text-xs sm:text-sm md:text-base text-neon-yellow">
+              <div className="border-4 border-neon-green rounded-lg overflow-hidden">
+                <div className="bg-cyber-black p-4 border-b-2 border-neon-green">
+                  <div className="grid grid-cols-3 gap-4 font-pixel text-sm md:text-base text-neon-yellow">
                     <div>RANK</div>
                     <div>PLAYER</div>
                     <div>SCORE</div>
@@ -609,20 +573,20 @@ export default function Game() {
                 </div>
                 
                 {leaderboard.length === 0 ? (
-                  <div className="p-6 sm:p-8 text-center font-terminal text-base sm:text-lg md:text-xl text-neon-green">
+                  <div className="p-8 text-center font-terminal text-xl text-neon-green">
                     No scores yet. Be the first!
                   </div>
                 ) : (
                   leaderboard.map((entry, index) => (
                     <div
                       key={`${entry.name}-${entry.date}-${index}`}
-                      className={`p-2 sm:p-3 md:p-4 border-b-2 border-cyber-dark ${
+                      className={`p-4 border-b-2 border-cyber-dark ${
                         index === 0 ? 'bg-neon-yellow/10' : 'bg-cyber-darker'
                       }`}
                     >
-                      <div className="grid grid-cols-3 gap-2 sm:gap-3 md:gap-4 font-terminal text-sm sm:text-base md:text-lg lg:text-xl">
+                      <div className="grid grid-cols-3 gap-4 font-terminal text-lg md:text-xl">
                         <div className="text-neon-yellow">#{index + 1}</div>
-                        <div className={`${index === 0 ? 'text-neon-yellow font-pixel' : 'text-neon-green'} truncate`}>
+                        <div className={index === 0 ? 'text-neon-yellow font-pixel' : 'text-neon-green'}>
                           {entry.name}
                         </div>
                         <div className="text-neon-blue">{entry.score}</div>
@@ -634,7 +598,7 @@ export default function Game() {
               
               <button
                 onClick={() => setShowLeaderboard(false)}
-                className="mt-4 sm:mt-6 w-full arcade-button font-pixel text-sm sm:text-base md:text-lg px-6 sm:px-8 py-3 sm:py-4 text-black uppercase touch-manipulation min-h-[44px]"
+                className="mt-6 w-full arcade-button font-pixel text-lg px-8 py-4 text-black uppercase"
               >
                 Close
               </button>
