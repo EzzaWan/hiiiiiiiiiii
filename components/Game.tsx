@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { X, Trophy } from 'lucide-react'
+
+interface LeaderboardEntry {
+  name: string
+  score: number
+  date: string
+}
 
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -9,6 +16,11 @@ export default function Game() {
   const [gameOver, setGameOver] = useState(false)
   const [score, setScore] = useState(0)
   const [highScore, setHighScore] = useState(0)
+  const [showNameInput, setShowNameInput] = useState(false)
+  const [playerName, setPlayerName] = useState('')
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [showLeaderboard, setShowLeaderboard] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
   
   // REFS (Mutable state for performance)
   const state = useRef({
@@ -76,11 +88,94 @@ export default function Game() {
     ctx.shadowBlur = 0
   }
 
+  // Load leaderboard from API
+  const loadLeaderboard = async () => {
+    try {
+      const response = await fetch('/api/leaderboard')
+      const data = await response.json()
+      
+      if (data.success && data.leaderboard) {
+        setLeaderboard(data.leaderboard)
+      }
+    } catch (error) {
+      console.error('Failed to load leaderboard:', error)
+      // Fallback to localStorage if API fails
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('debug_or_die_leaderboard')
+        if (stored) {
+          try {
+            const entries = JSON.parse(stored) as LeaderboardEntry[]
+            setLeaderboard(entries.sort((a, b) => b.score - a.score).slice(0, 10))
+          } catch (e) {
+            console.error('Failed to load from localStorage:', e)
+          }
+        }
+      }
+    }
+    
+    // Still load high score from localStorage (personal best)
+    if (typeof window !== 'undefined') {
+      const storedHigh = localStorage.getItem('hi_score')
+      if (storedHigh) setHighScore(parseInt(storedHigh))
+    }
+  }
+
+  // Save score to API (shared leaderboard)
+  const saveScore = async (name: string, score: number) => {
+    try {
+      const response = await fetch('/api/leaderboard', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, score }),
+      })
+      
+      const data = await response.json()
+      
+      if (data.success && data.leaderboard) {
+        setLeaderboard(data.leaderboard)
+      } else {
+        throw new Error(data.error || 'Failed to save score')
+      }
+    } catch (error) {
+      console.error('Failed to save score to API:', error)
+      // Fallback to localStorage if API fails
+      if (typeof window !== 'undefined') {
+        const newEntry: LeaderboardEntry = {
+          name: name.trim() || 'ANONYMOUS',
+          score,
+          date: new Date().toISOString()
+        }
+        
+        const currentLeaderboard = leaderboard.length > 0 
+          ? leaderboard 
+          : (() => {
+              const stored = localStorage.getItem('debug_or_die_leaderboard')
+              return stored ? JSON.parse(stored) : []
+            })()
+        
+        const updated = [...currentLeaderboard, newEntry]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 10)
+        
+        setLeaderboard(updated)
+        localStorage.setItem('debug_or_die_leaderboard', JSON.stringify(updated))
+      }
+    }
+    
+    // Always save personal high score to localStorage
+    if (score > highScore) {
+      setHighScore(score)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('hi_score', score.toString())
+      }
+    }
+  }
+
   // --- MAIN LOGIC ---
   useEffect(() => {
-    // Load High Score
-    const stored = typeof window !== 'undefined' ? localStorage.getItem('hi_score') : '0'
-    if (stored) setHighScore(parseInt(stored))
+    loadLeaderboard()
 
     // Init Canvas Visuals - matching site colors
     if (canvasRef.current) {
@@ -113,6 +208,8 @@ export default function Game() {
   const startGame = () => {
     setGameStarted(true)
     setGameOver(false)
+    setShowNameInput(false)
+    setPlayerName('')
     setScore(0)
     
     // Reset Logic State
@@ -237,12 +334,28 @@ export default function Game() {
     setGameOver(true)
     setGameStarted(false)
     
-    // 4. High Score Logic
+    // 4. Show name input if score is worth saving (top 10 or beat high score)
     const currentScore = Math.floor(state.current.score / 10)
-    if (currentScore > highScore) {
-        setHighScore(currentScore)
-        localStorage.setItem('hi_score', currentScore.toString())
+    const minScoreToSave = leaderboard.length < 10 
+      ? 0 
+      : (leaderboard[leaderboard.length - 1]?.score || 0)
+    
+    if (currentScore >= minScoreToSave || currentScore > highScore) {
+      setTimeout(() => {
+        setShowNameInput(true)
+        if (nameInputRef.current) {
+          nameInputRef.current.focus()
+        }
+      }, 500)
     }
+  }
+
+  const handleSubmitName = (e: React.FormEvent) => {
+    e.preventDefault()
+    const currentScore = Math.floor(state.current.score / 10)
+    saveScore(playerName, currentScore)
+    setShowNameInput(false)
+    setPlayerName('')
   }
 
   const jump = () => {
@@ -282,23 +395,34 @@ export default function Game() {
               <p>🧠 = Human Intelligence</p>
               <p>🐛 = Bugs to avoid</p>
             </div>
-            <button 
-              onClick={startGame} 
-              className="arcade-button font-pixel text-lg px-8 py-4 text-black uppercase"
-            >
-              Start Game
-            </button>
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={startGame} 
+                className="arcade-button font-pixel text-lg px-8 py-4 text-black uppercase"
+              >
+                Start Game
+              </button>
+              {leaderboard.length > 0 && (
+                <button 
+                  onClick={() => setShowLeaderboard(true)} 
+                  className="bg-cyber-dark border-2 border-neon-purple font-pixel text-sm px-6 py-3 text-neon-purple uppercase hover:bg-neon-purple hover:text-black transition-all flex items-center justify-center gap-2"
+                >
+                  <Trophy className="w-4 h-4" />
+                  View Leaderboard
+                </button>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* GAME OVER SCREEN - matching site style */}
       <AnimatePresence>
-        {gameOver && (
+        {gameOver && !showNameInput && (
           <motion.div 
             initial={{ opacity: 0, scale: 0.8 }} 
             animate={{ opacity: 1, scale: 1 }}
-            className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm"
+            className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm z-20"
           >
             <motion.h2
               className="font-pixel text-3xl md:text-5xl text-red-500 mb-4"
@@ -323,12 +447,151 @@ export default function Game() {
               <p className="text-neon-green">SCORE: {score}</p>
               <p className="text-neon-yellow">HIGH: {highScore}</p>
             </div>
-            <button 
-              onClick={startGame} 
-              className="arcade-button font-pixel text-lg px-8 py-4 text-black uppercase"
+            <div className="flex gap-4">
+              <button 
+                onClick={startGame} 
+                className="arcade-button font-pixel text-lg px-8 py-4 text-black uppercase"
+              >
+                Retry
+              </button>
+              {leaderboard.length > 0 && (
+                <button 
+                  onClick={() => setShowLeaderboard(true)} 
+                  className="bg-cyber-dark border-2 border-neon-purple font-pixel text-lg px-8 py-4 text-neon-purple uppercase hover:bg-neon-purple hover:text-black transition-all flex items-center gap-2"
+                >
+                  <Trophy className="w-5 h-5" />
+                  Leaderboard
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* NAME INPUT MODAL */}
+      <AnimatePresence>
+        {showNameInput && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.8 }} 
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="absolute inset-0 flex items-center justify-center bg-black/95 backdrop-blur-sm z-30"
+          >
+            <div className="bg-cyber-dark border-4 border-neon-green rounded-lg p-8 max-w-md w-full mx-4">
+              <h3 className="font-pixel text-2xl text-neon-green mb-4 text-center">
+                🏆 NEW HIGH SCORE! 🏆
+              </h3>
+              <p className="font-terminal text-xl text-neon-blue mb-6 text-center">
+                Score: {score}
+              </p>
+              <p className="font-terminal text-lg text-white mb-4 text-center">
+                Enter your name for the leaderboard:
+              </p>
+              <form onSubmit={handleSubmitName} className="space-y-4">
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  maxLength={15}
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value.toUpperCase())}
+                  className="w-full bg-cyber-black border-2 border-neon-green text-neon-green font-terminal text-xl p-4 focus:outline-none focus:border-neon-purple uppercase"
+                  placeholder="YOUR NAME"
+                  autoFocus
+                />
+                <div className="flex gap-4">
+                  <button
+                    type="submit"
+                    className="arcade-button font-pixel text-lg px-8 py-4 text-black uppercase flex-1"
+                  >
+                    Submit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNameInput(false)
+                      setPlayerName('')
+                    }}
+                    className="bg-cyber-dark border-2 border-neon-purple font-pixel text-lg px-6 py-4 text-neon-purple uppercase hover:bg-neon-purple hover:text-black transition-all"
+                  >
+                    Skip
+                  </button>
+                </div>
+              </form>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* LEADERBOARD POPUP */}
+      <AnimatePresence>
+        {showLeaderboard && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/95 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowLeaderboard(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.8, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.8, y: 50 }}
+              className="bg-cyber-dark border-4 border-neon-green rounded-lg p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
             >
-              Retry
-            </button>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="font-pixel text-3xl text-neon-green flex items-center gap-3">
+                  <Trophy className="w-8 h-8 text-neon-yellow" />
+                  LEADERBOARD
+                </h2>
+                <button
+                  onClick={() => setShowLeaderboard(false)}
+                  className="text-neon-green hover:text-neon-purple transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="border-4 border-neon-green rounded-lg overflow-hidden">
+                <div className="bg-cyber-black p-4 border-b-2 border-neon-green">
+                  <div className="grid grid-cols-3 gap-4 font-pixel text-sm md:text-base text-neon-yellow">
+                    <div>RANK</div>
+                    <div>PLAYER</div>
+                    <div>SCORE</div>
+                  </div>
+                </div>
+                
+                {leaderboard.length === 0 ? (
+                  <div className="p-8 text-center font-terminal text-xl text-neon-green">
+                    No scores yet. Be the first!
+                  </div>
+                ) : (
+                  leaderboard.map((entry, index) => (
+                    <div
+                      key={`${entry.name}-${entry.date}-${index}`}
+                      className={`p-4 border-b-2 border-cyber-dark ${
+                        index === 0 ? 'bg-neon-yellow/10' : 'bg-cyber-darker'
+                      }`}
+                    >
+                      <div className="grid grid-cols-3 gap-4 font-terminal text-lg md:text-xl">
+                        <div className="text-neon-yellow">#{index + 1}</div>
+                        <div className={index === 0 ? 'text-neon-yellow font-pixel' : 'text-neon-green'}>
+                          {entry.name}
+                        </div>
+                        <div className="text-neon-blue">{entry.score}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <button
+                onClick={() => setShowLeaderboard(false)}
+                className="mt-6 w-full arcade-button font-pixel text-lg px-8 py-4 text-black uppercase"
+              >
+                Close
+              </button>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
