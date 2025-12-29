@@ -111,3 +111,4 @@ If you add any API keys or secrets:
 - ✅ The game uses localStorage (works in production)
 - ✅ All fonts are loaded from Google Fonts (no local files needed)
 
+

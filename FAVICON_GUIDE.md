@@ -80,3 +80,4 @@ After replacing the files:
 2. Check browser tab - favicon should appear
 3. Test on mobile devices for Apple icon
 
+

@@ -2,16 +2,37 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Trophy } from 'lucide-react'
+import { X, Trophy, RefreshCw } from 'lucide-react'
 
+// --- TYPES ---
 interface LeaderboardEntry {
   name: string
   score: number
   date: string
 }
 
+interface Obstacle {
+  x: number
+  y: number
+  width: number
+  height: number
+  type: 'SPIKE' | 'BLOCK'
+  passed: boolean
+}
+
+interface Particle {
+  x: number
+  y: number
+  life: number
+  size: number
+  color: string
+}
+
 export default function Game() {
+  // --- REFS & STATE ---
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  
+  // UI States
   const [gameStarted, setGameStarted] = useState(false)
   const [gameOver, setGameOver] = useState(false)
   const [score, setScore] = useState(0)
@@ -22,86 +43,44 @@ export default function Game() {
   const [showLeaderboard, setShowLeaderboard] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
   
-  // REFS (Mutable state for performance)
+  // Game Logic State (Mutable Refs for 60FPS Performance)
   const state = useRef({
-    player: { x: 100, y: 300, width: 40, height: 40, velocity: 0, jumping: false },
-    obstacles: [] as any[],
+    player: { 
+      x: 100, 
+      y: 360, // Floor Level
+      width: 40, 
+      height: 40, 
+      dy: 0, 
+      rotation: 0,
+      isGrounded: true,
+      jumpForce: -16, // Increased base jump
+      gravity: 0.7
+    },
+    obstacles: [] as Obstacle[],
+    particles: [] as Particle[],
     score: 0,
-    speed: 4, 
-    lastObstacleTime: 0,
-    isGameActive: false // CRITICAL: Controls the loop instantly
+    speed: 2.7, // 10% slower (3 * 0.9)
+    cameraOffset: 0,
+    isGameActive: false,
+    isHoldingJump: false,
+    jumpHoldStart: 0,
+    maxHoldDuration: 200 // Max 200ms hold for extra boost
   })
   
   const animationFrameId = useRef<number>()
+  const isStartingGame = useRef(false)
 
-  // --- BETTER ART FUNCTIONS ---
-  const drawPixelBrain = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
-    // Pixelated brain - matching site style
-    ctx.fillStyle = '#ff00ff' // Neon Pink/Purple
-    ctx.shadowColor = '#ff00ff'
-    ctx.shadowBlur = 5
-    
-    // Main Lobe
-    ctx.fillRect(x + 5, y + 5, 30, 25) 
-    // Frontal Lobe
-    ctx.fillRect(x + 2, y + 10, 36, 15)
-    // Stem
-    ctx.fillStyle = '#bf00ff'
-    ctx.fillRect(x + 15, y + 30, 10, 10)
-    
-    // Details (highlights)
-    ctx.fillStyle = '#ff99ff' 
-    ctx.fillRect(x + 10, y + 8, 6, 6)
-    ctx.fillRect(x + 22, y + 12, 8, 4)
-    
-    // Eyes (neon green like site)
-    ctx.fillStyle = '#00ff41'
-    ctx.fillRect(x + 12, y + 12, 4, 4)
-    ctx.fillRect(x + 24, y + 12, 4, 4)
-    
-    ctx.shadowBlur = 0
-  }
-
-  const drawSpaceInvader = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
-    ctx.fillStyle = '#ff0000' // Red bug
-    ctx.shadowColor = '#ff0000'
-    ctx.shadowBlur = 5
-    
-    // Draw bug/alien shape using rects
-    // Body
-    ctx.fillRect(x + 8, y + 8, 24, 16)
-    // Ears/Horns
-    ctx.fillRect(x + 2, y + 2, 8, 8)
-    ctx.fillRect(x + 30, y + 2, 8, 8)
-    // Arms
-    ctx.fillRect(x, y + 14, 6, 12)
-    ctx.fillRect(x + 34, y + 14, 6, 12)
-    // Legs
-    ctx.fillRect(x + 6, y + 30, 8, 8)
-    ctx.fillRect(x + 26, y + 30, 8, 8)
-    
-    // Eyes (Black)
-    ctx.fillStyle = '#000'
-    ctx.fillRect(x + 10, y + 12, 6, 6)
-    ctx.fillRect(x + 24, y + 12, 6, 6)
-    
-    ctx.shadowBlur = 0
-  }
-
-  // Load leaderboard from API
+  // --- LEADERBOARD LOGIC ---
   const loadLeaderboard = async () => {
     try {
       const response = await fetch('/api/leaderboard')
       const data = await response.json()
-      
       if (data.success && data.leaderboard) {
         setLeaderboard(data.leaderboard)
       }
     } catch (error) {
-      console.error('Failed to load leaderboard:', error)
-      // Fallback to localStorage if API fails
       if (typeof window !== 'undefined') {
-        const stored = localStorage.getItem('debug_or_die_leaderboard')
+        const stored = localStorage.getItem('human_dash_leaderboard')
         if (stored) {
           try {
             const entries = JSON.parse(stored) as LeaderboardEntry[]
@@ -112,82 +91,464 @@ export default function Game() {
         }
       }
     }
-    
-    // Still load high score from localStorage (personal best)
     if (typeof window !== 'undefined') {
-      const storedHigh = localStorage.getItem('hi_score')
+      const storedHigh = localStorage.getItem('human_dash_hiscore')
       if (storedHigh) setHighScore(parseInt(storedHigh))
     }
   }
 
-  // Save score to API (shared leaderboard)
   const saveScore = async (name: string, score: number) => {
-    try {
-      const response = await fetch('/api/leaderboard', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name, score }),
-      })
+    // Save personal high score to localStorage
+    if (typeof window !== 'undefined') {
+      const storedHigh = localStorage.getItem('human_dash_hiscore')
+      const currentHigh = storedHigh ? parseInt(storedHigh) : 0
       
-      const data = await response.json()
-      
-      if (data.success && data.leaderboard) {
-        setLeaderboard(data.leaderboard)
-      } else {
-        throw new Error(data.error || 'Failed to save score')
-      }
-    } catch (error) {
-      console.error('Failed to save score to API:', error)
-      // Fallback to localStorage if API fails
-      if (typeof window !== 'undefined') {
-        const newEntry: LeaderboardEntry = {
-          name: name.trim() || 'ANONYMOUS',
-          score,
-          date: new Date().toISOString()
-        }
-        
-        const currentLeaderboard = leaderboard.length > 0 
-          ? leaderboard 
-          : (() => {
-              const stored = localStorage.getItem('debug_or_die_leaderboard')
-              return stored ? JSON.parse(stored) : []
-            })()
-        
-        const updated = [...currentLeaderboard, newEntry]
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 10)
-        
-        setLeaderboard(updated)
-        localStorage.setItem('debug_or_die_leaderboard', JSON.stringify(updated))
+      if (score > currentHigh) {
+        localStorage.setItem('human_dash_hiscore', score.toString())
+        setHighScore(score)
       }
     }
+
+    // Save to leaderboard (localStorage and API)
+    const newEntry: LeaderboardEntry = { 
+      name: name.trim() || 'ANONYMOUS', 
+      score, 
+      date: new Date().toISOString() 
+    }
     
-    // Always save personal high score to localStorage
-    if (score > highScore) {
-      setHighScore(score)
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('hi_score', score.toString())
+    // Save to localStorage leaderboard
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('human_dash_leaderboard')
+      const current = stored ? JSON.parse(stored) : []
+      const updated = [...current, newEntry]
+        .sort((a: any, b: any) => b.score - a.score)
+        .slice(0, 10)
+      localStorage.setItem('human_dash_leaderboard', JSON.stringify(updated))
+      setLeaderboard(updated)
+    }
+
+    // Save to API/DB
+    try {
+      await fetch('/api/leaderboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newEntry.name, score })
+      })
+      // Reload leaderboard from API to get the updated version
+      const response = await fetch('/api/leaderboard')
+      const data = await response.json()
+      if (data.success && data.leaderboard) {
+        setLeaderboard(data.leaderboard)
       }
+    } catch (e) {
+      console.warn('API save failed, using local only')
     }
   }
 
-  // --- MAIN LOGIC ---
+  // --- DRAWING FUNCTIONS (Cyberpunk Theme) ---
+  
+  // 1. Draw Player (Rotating Cube with Brain Icon)
+  const drawPlayer = (ctx: CanvasRenderingContext2D, s: any) => {
+    ctx.save()
+    ctx.translate(s.player.x + s.player.width/2, s.player.y + s.player.height/2)
+    ctx.rotate(s.player.rotation * Math.PI / 180)
+    
+    // Cube Body (Neon Green Border)
+    ctx.fillStyle = '#0a0a0a'
+    ctx.fillRect(-s.player.width/2, -s.player.height/2, s.player.width, s.player.height)
+    
+    // Neon Green Outline (matching site)
+    ctx.strokeStyle = '#00ff41'
+    ctx.lineWidth = 3
+    ctx.shadowColor = '#00ff41'
+    ctx.shadowBlur = 5
+    ctx.strokeRect(-s.player.width/2, -s.player.height/2, s.player.width, s.player.height)
+    ctx.shadowBlur = 0
+
+    // Inner "Brain" Icon (Purple/Pink matching site)
+    ctx.fillStyle = '#b026ff'
+    ctx.fillRect(-10, -10, 20, 20)
+    // Green Eye
+    ctx.fillStyle = '#00ff41'
+    ctx.fillRect(2, -5, 6, 6)
+
+    ctx.restore()
+  }
+
+  // 2. Draw Spikes (Red triangles - danger)
+  const drawSpike = (ctx: CanvasRenderingContext2D, obs: Obstacle) => {
+    ctx.beginPath()
+    ctx.moveTo(obs.x, obs.y + obs.height)
+    ctx.lineTo(obs.x + obs.width / 2, obs.y)
+    ctx.lineTo(obs.x + obs.width, obs.y + obs.height)
+    ctx.closePath()
+    
+    const gradient = ctx.createLinearGradient(obs.x, obs.y, obs.x, obs.y + obs.height)
+    gradient.addColorStop(0, '#ff003c')
+    gradient.addColorStop(1, '#500012')
+    
+    ctx.fillStyle = gradient
+    ctx.shadowColor = '#ff003c'
+    ctx.shadowBlur = 8
+    ctx.fill()
+    ctx.strokeStyle = '#ff003c'
+    ctx.lineWidth = 2
+    ctx.stroke()
+    ctx.shadowBlur = 0
+  }
+
+  // 3. Draw Blocks (Platforms with neon purple border)
+  const drawBlock = (ctx: CanvasRenderingContext2D, obs: Obstacle) => {
+    ctx.fillStyle = '#0a0a0a'
+    ctx.fillRect(obs.x, obs.y, obs.width, obs.height)
+    
+    // Neon Purple Border (matching site)
+    ctx.strokeStyle = '#b026ff'
+    ctx.lineWidth = 3
+    ctx.shadowColor = '#b026ff'
+    ctx.shadowBlur = 5
+    ctx.strokeRect(obs.x, obs.y, obs.width, obs.height)
+    ctx.shadowBlur = 0
+    
+    // Detail Lines (X pattern)
+    ctx.beginPath()
+    ctx.moveTo(obs.x, obs.y)
+    ctx.lineTo(obs.x + obs.width, obs.y + obs.height)
+    ctx.moveTo(obs.x + obs.width, obs.y)
+    ctx.lineTo(obs.x, obs.y + obs.height)
+    ctx.strokeStyle = 'rgba(176, 38, 255, 0.3)'
+    ctx.lineWidth = 1
+    ctx.stroke()
+  }
+
+  // --- GAME LOOP ---
+  const gameLoop = () => {
+    if (!state.current.isGameActive) return
+
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+
+    const s = state.current
+    
+    // -- 1. UPDATE STATE --
+    
+    // Physics (Gravity)
+    s.player.dy += s.player.gravity
+    
+    // Hold-to-jump-higher mechanic
+    if (s.isHoldingJump && !s.player.isGrounded) {
+      const holdDuration = Date.now() - s.jumpHoldStart
+      if (holdDuration < s.maxHoldDuration) {
+        // Apply additional upward force while holding (up to threshold)
+        const holdBoost = Math.min(holdDuration / s.maxHoldDuration, 1) * 0.5 // Max 0.5 extra force
+        s.player.dy -= holdBoost
+      }
+    }
+    
+    s.player.y += s.player.dy
+    
+    // Rotation logic
+    if (!s.player.isGrounded) {
+      s.player.rotation += 6
+    } else {
+      const remainder = s.player.rotation % 90
+      if (remainder !== 0) {
+        if (remainder < 45) s.player.rotation -= remainder
+        else s.player.rotation += (90 - remainder)
+      }
+    }
+
+    const floorY = 400 - s.player.height
+    s.player.isGrounded = false
+    let onPlatform = false
+
+    // Collision Detection
+    for (const obs of s.obstacles) {
+      if (obs.type === 'SPIKE') {
+        // More forgiving hitbox for spikes - only check if player is actually touching the spike
+        // Spike hitbox: smaller margin, especially on sides and top
+        const spikeMargin = 8 // More forgiving margin for spikes
+        const playerCenterX = s.player.x + s.player.width / 2
+        const playerCenterY = s.player.y + s.player.height / 2
+        const spikeCenterX = obs.x + obs.width / 2
+        const spikeTopY = obs.y
+        
+        // Check if player center is within spike bounds (more forgiving)
+        if (
+          playerCenterX > obs.x + spikeMargin &&
+          playerCenterX < obs.x + obs.width - spikeMargin &&
+          playerCenterY > spikeTopY - 5 && // Allow slight overlap at top
+          playerCenterY < obs.y + obs.height - spikeMargin
+        ) {
+          handleGameOver()
+          return
+        }
+      } else if (obs.type === 'BLOCK') {
+        // Block collision (platforms) - keep original logic
+        if (
+          s.player.x < obs.x + obs.width - 5 &&
+          s.player.x + s.player.width > obs.x + 5 &&
+          s.player.y < obs.y + obs.height - 5 &&
+          s.player.y + s.player.height > obs.y + 5
+        ) {
+          const playerBottom = s.player.y + s.player.height - s.player.dy
+          if (s.player.dy > 0 && playerBottom <= obs.y + 10) {
+            s.player.y = obs.y - s.player.height
+            s.player.dy = 0
+            s.player.isGrounded = true
+            onPlatform = true
+          } else {
+            handleGameOver()
+            return
+          }
+        }
+      }
+    }
+
+    // Floor Collision
+    if (!onPlatform) {
+      if (s.player.y >= floorY) {
+        s.player.y = floorY
+        s.player.dy = 0
+        s.player.isGrounded = true
+      } else if (s.player.y > 600) {
+        handleGameOver()
+        return
+      }
+    }
+
+    // Move Obstacles
+    s.obstacles.forEach(obs => obs.x -= s.speed)
+    
+    // Spawning Logic
+    if (s.obstacles.length === 0 || s.obstacles[s.obstacles.length - 1].x < 600) {
+      spawnObstaclePattern(canvas.width)
+    }
+    
+    s.obstacles = s.obstacles.filter(obs => obs.x > -100)
+    
+    // Score
+    s.score++
+    if (s.score % 1000 === 0) s.speed += 0.1 // Slower speed increase
+    setScore(Math.floor(s.score / 10))
+
+    // Particles (Trail)
+    if (s.score % 5 === 0) {
+      s.particles.push({
+        x: s.player.x, y: s.player.y,
+        life: 20, size: s.player.width, color: 'rgba(0, 255, 65, 0.4)'
+      })
+    }
+
+    // -- 2. DRAWING --
+    
+    // Background (matching site dark)
+    ctx.fillStyle = '#0a0a0a'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    
+    // Moving Grid Background (Cyberpunk style)
+    const gridOffset = (s.score * 2) % 50
+    ctx.strokeStyle = 'rgba(0, 255, 65, 0.1)'
+    ctx.lineWidth = 1
+    
+    for (let x = -gridOffset; x < canvas.width; x += 50) {
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, 400)
+      ctx.stroke()
+    }
+    for (let y = 400; y < canvas.height; y += 20) {
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(canvas.width, y)
+      ctx.stroke()
+    }
+
+    // Draw Floor Line (Neon Green)
+    ctx.shadowBlur = 10
+    ctx.shadowColor = '#00ff41'
+    ctx.strokeStyle = '#00ff41'
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.moveTo(0, 400)
+    ctx.lineTo(canvas.width, 400)
+    ctx.stroke()
+    ctx.shadowBlur = 0
+
+    // Draw Particles (Trail)
+    s.particles.forEach((p) => {
+      ctx.fillStyle = p.color
+      ctx.globalAlpha = p.life / 20
+      ctx.fillRect(p.x, p.y, p.size, p.size)
+      ctx.globalAlpha = 1.0
+      p.life--
+      p.x -= s.speed
+    })
+    s.particles = s.particles.filter(p => p.life > 0)
+
+    // Draw Obstacles
+    s.obstacles.forEach(obs => {
+      if (obs.type === 'SPIKE') drawSpike(ctx, obs)
+      else drawBlock(ctx, obs)
+    })
+
+    // Draw Player
+    drawPlayer(ctx, s)
+
+    // Draw Score (matching site font)
+    ctx.font = '20px "Press Start 2P"'
+    ctx.fillStyle = '#00ff41'
+    ctx.shadowBlur = 3
+    ctx.shadowColor = '#00ff41'
+    ctx.textAlign = 'left'
+    ctx.fillText(`SCORE: ${Math.floor(s.score / 10)}`, 20, 40)
+    
+    ctx.textAlign = 'right'
+    ctx.fillStyle = '#b026ff'
+    ctx.shadowColor = '#b026ff'
+    ctx.fillText(`BEST: ${highScore}`, canvas.width - 20, 40)
+    ctx.shadowBlur = 0
+
+    animationFrameId.current = requestAnimationFrame(gameLoop)
+  }
+
+  // --- OBSTACLE PATTERNS ---
+  const spawnObstaclePattern = (startX: number) => {
+    const type = Math.random()
+    const yFloor = 400
+    
+    if (type < 0.3) {
+      state.current.obstacles.push({
+        x: startX, y: yFloor - 40, width: 40, height: 40, type: 'SPIKE', passed: false
+      })
+    } else if (type < 0.5) {
+      state.current.obstacles.push(
+        { x: startX, y: yFloor - 40, width: 30, height: 40, type: 'SPIKE', passed: false },
+        { x: startX + 30, y: yFloor - 40, width: 30, height: 40, type: 'SPIKE', passed: false },
+        { x: startX + 60, y: yFloor - 40, width: 30, height: 40, type: 'SPIKE', passed: false }
+      )
+    } else if (type < 0.8) {
+      state.current.obstacles.push({
+        x: startX, y: yFloor - 50, width: 60, height: 50, type: 'BLOCK', passed: false
+      })
+      if (Math.random() > 0.5) {
+         state.current.obstacles.push({
+           x: startX + 150, y: yFloor - 40, width: 40, height: 40, type: 'SPIKE', passed: false
+         })
+      }
+    } else {
+      state.current.obstacles.push({
+        x: startX, y: yFloor - 90, width: 80, height: 40, type: 'BLOCK', passed: false
+      })
+      state.current.obstacles.push({
+        x: startX + 20, y: yFloor - 40, width: 40, height: 40, type: 'SPIKE', passed: false
+      })
+    }
+  }
+
+  const handleGameOver = () => {
+    state.current.isGameActive = false
+    setGameOver(true)
+    setGameStarted(false)
+    if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current)
+    
+    const finalScore = Math.floor(state.current.score / 10)
+    
+    // Only show name input if it's a NEW personal high score (checked against localStorage)
+    let storedHighScore = 0
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('human_dash_hiscore')
+      if (stored) storedHighScore = parseInt(stored)
+    }
+    
+    // Only show modal if this score beats the stored personal best
+    if (finalScore > storedHighScore) {
+      setTimeout(() => {
+        setShowNameInput(true)
+        if (nameInputRef.current) {
+          nameInputRef.current.focus()
+        }
+      }, 500)
+    }
+  }
+
+  const startGame = () => {
+    // Prevent multiple calls
+    if (state.current.isGameActive) return
+    
+    setGameStarted(true)
+    setGameOver(false)
+    setShowNameInput(false)
+    setPlayerName('')
+    setScore(0)
+    
+    state.current = {
+      player: { x: 100, y: 360, width: 40, height: 40, dy: 0, rotation: 0, isGrounded: true, jumpForce: -16, gravity: 0.7 },
+      obstacles: [],
+      particles: [],
+      score: 0,
+      speed: 2.7, // 10% slower (3 * 0.9)
+      cameraOffset: 0,
+      isGameActive: true,
+      isHoldingJump: false,
+      jumpHoldStart: 0,
+      maxHoldDuration: 200
+    }
+    gameLoop()
+  }
+
+  const handleJumpStart = (e?: any) => {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    
+    // If game is not active, start it (prevent multiple calls)
+    if (!state.current.isGameActive && !isStartingGame.current) {
+      isStartingGame.current = true
+      startGame()
+      setTimeout(() => { isStartingGame.current = false }, 100)
+      return
+    }
+
+    // Jump only if game is active and player is grounded
+    if (state.current.isGameActive && state.current.player.isGrounded) {
+      state.current.player.dy = state.current.player.jumpForce
+      state.current.player.isGrounded = false
+      state.current.isHoldingJump = true
+      state.current.jumpHoldStart = Date.now()
+    }
+  }
+
+  const handleJumpEnd = (e?: any) => {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    state.current.isHoldingJump = false
+  }
+
+  // Canvas initialization - runs once on mount
   useEffect(() => {
     loadLeaderboard()
 
-    // Init Canvas Visuals - matching site colors
+    // Init Canvas
     if (canvasRef.current) {
       canvasRef.current.width = 800
       canvasRef.current.height = 500
       const ctx = canvasRef.current.getContext('2d')
       if (ctx) {
-        ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,800,500);
-        ctx.strokeStyle = '#00ff41'; ctx.lineWidth = 4; 
-        ctx.beginPath(); ctx.moveTo(0, 400); ctx.lineTo(800, 400); ctx.stroke();
+        ctx.fillStyle = '#0a0a0a'
+        ctx.fillRect(0, 0, 800, 500)
+        ctx.strokeStyle = '#00ff41'
+        ctx.lineWidth = 4
+        ctx.beginPath()
+        ctx.moveTo(0, 400)
+        ctx.lineTo(800, 400)
+        ctx.stroke()
         
-        // Grid pattern like site
+        // Grid pattern
         ctx.strokeStyle = 'rgba(0, 255, 65, 0.2)'
         ctx.lineWidth = 1
         for (let i = 0; i < 800; i += 30) {
@@ -198,196 +559,55 @@ export default function Game() {
         }
       }
     }
-    
-    // Cleanup loop on unmount
-    return () => {
-        if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current)
-    }
   }, [])
 
-  const startGame = () => {
-    setGameStarted(true)
-    setGameOver(false)
-    setShowNameInput(false)
-    setPlayerName('')
-    setScore(0)
-    
-    // Reset Logic State
-    state.current = {
-      player: { x: 100, y: 300, width: 40, height: 40, velocity: 0, jumping: false },
-      obstacles: [],
-      score: 0,
-      speed: 4, // Easy mode speed
-      lastObstacleTime: 0,
-      isGameActive: true // Enable loop
-    }
-    
-    gameLoop()
-  }
-
-  const gameLoop = () => {
-    // CRITICAL: If game is not active, STOP.
-    if (!state.current.isGameActive) return
-
-    const canvas = canvasRef.current
-    const ctx = canvas?.getContext('2d')
-    if (!canvas || !ctx) return
-
-    const s = state.current
-    const now = Date.now()
-
-    // 1. Clear & Background - matching site
-    ctx.fillStyle = '#0a0a0a'
-    ctx.fillRect(0, 0, 800, 500)
-    
-    // Floor
-    ctx.strokeStyle = '#00ff41'
-    ctx.lineWidth = 4
-    ctx.beginPath(); ctx.moveTo(0, 400); ctx.lineTo(800, 400); ctx.stroke();
-    
-    // Grid pattern
-    ctx.strokeStyle = 'rgba(0, 255, 65, 0.2)'
-    ctx.lineWidth = 1
-    for (let i = 0; i < 800; i += 30) {
-      ctx.beginPath()
-      ctx.moveTo(i - (s.score % 30), 400)
-      ctx.lineTo(i - (s.score % 30) + 15, 500)
-      ctx.stroke()
-    }
-
-    // 2. Player Physics
-    s.player.velocity += 0.6 // Gravity
-    s.player.y += s.player.velocity
-    
-    if (s.player.y > 360) { 
-      s.player.y = 360
-      s.player.velocity = 0
-      s.player.jumping = false
-    }
-
-    // 3. Draw Player
-    drawPixelBrain(ctx, s.player.x, s.player.y)
-
-    // 4. Spawning Logic
-    const minTimeGap = 1500 - (s.score * 2) 
-    const timeSinceLast = now - s.lastObstacleTime
-
-    if (timeSinceLast > Math.max(600, minTimeGap)) { 
-       if (Math.random() > 0.6) { 
-           s.obstacles.push({
-             x: 800,
-             y: Math.random() > 0.75 ? 260 : 360, 
-             width: 40,
-             height: 40
-           })
-           s.lastObstacleTime = now
-       }
-    }
-
-    // Move & Draw Obstacles
-    s.obstacles.forEach((obs) => {
-        obs.x -= s.speed
-        drawSpaceInvader(ctx, obs.x, obs.y)
-        
-        // Hitbox Collision
-        if (
-            s.player.x < obs.x + obs.width - 15 &&
-            s.player.x + s.player.width > obs.x + 15 &&
-            s.player.y < obs.y + obs.height - 15 &&
-            s.player.y + s.player.height > obs.y + 15
-        ) {
-            handleGameOver() // DIE IMMEDIATELY
-        }
-    })
-    
-    // Cleanup offscreen
-    s.obstacles = s.obstacles.filter(obs => obs.x > -50)
-
-    // 5. Score
-    s.score++
-    if (s.score % 1000 === 0) s.speed += 0.5 
-    setScore(Math.floor(s.score / 10))
-    
-    // Text - matching site font and style
-    ctx.font = '20px "Press Start 2P"'
-    ctx.fillStyle = '#00ff41'
-    ctx.shadowBlur = 3
-    ctx.shadowColor = '#00ff41'
-    ctx.fillText(`SCORE: ${Math.floor(s.score / 10)}`, 20, 40)
-    ctx.fillText(`HIGH: ${highScore}`, 680, 40)
-    ctx.shadowBlur = 0
-
-    // Keep loop going only if active
-    if (state.current.isGameActive) {
-        animationFrameId.current = requestAnimationFrame(gameLoop)
-    }
-  }
-
-  const handleGameOver = () => {
-    // 1. Kill the loop logic flag INSTANTLY
-    state.current.isGameActive = false
-    
-    // 2. Cancel the frame request to be double sure
-    if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current)
-    
-    // 3. Update React State to show UI
-    setGameOver(true)
-    setGameStarted(false)
-    
-    // 4. Show name input if score is worth saving (top 10 or beat high score)
-    const currentScore = Math.floor(state.current.score / 10)
-    const minScoreToSave = leaderboard.length < 10 
-      ? 0 
-      : (leaderboard[leaderboard.length - 1]?.score || 0)
-    
-    if (currentScore >= minScoreToSave || currentScore > highScore) {
-      setTimeout(() => {
-        setShowNameInput(true)
-        if (nameInputRef.current) {
-          nameInputRef.current.focus()
-        }
-      }, 500)
-    }
-  }
-
-  const handleSubmitName = (e: React.FormEvent) => {
-    e.preventDefault()
-    const currentScore = Math.floor(state.current.score / 10)
-    saveScore(playerName, currentScore)
-    setShowNameInput(false)
-    setPlayerName('')
-  }
-
-  const jump = () => {
-    if (!gameStarted) startGame()
-    else if (!state.current.player.jumping && state.current.isGameActive) {
-        state.current.player.velocity = -13 
-        state.current.player.jumping = true
-    }
-  }
-
+  // Keyboard event listeners - separate effect
   useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
+    const kd = (e: KeyboardEvent) => { 
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
         e.preventDefault()
-        jump()
+        e.stopPropagation()
+        // Prevent key repeat from interfering
+        if (e.repeat) return
+        handleJumpStart(e)
       }
     }
-    window.addEventListener('keydown', handleKeyPress)
-    return () => window.removeEventListener('keydown', handleKeyPress)
-  }, [gameStarted, gameOver])
+    const ku = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
+        e.preventDefault()
+        e.stopPropagation()
+        handleJumpEnd(e)
+      }
+    }
+    window.addEventListener('keydown', kd, { passive: false })
+    window.addEventListener('keyup', ku, { passive: false })
+    
+    return () => { 
+      window.removeEventListener('keydown', kd)
+      window.removeEventListener('keyup', ku)
+    }
+  }, [])
 
   return (
     <div className="relative w-full h-[500px] border-4 border-neon-green rounded-lg overflow-hidden bg-cyber-darker">
       <canvas 
         ref={canvasRef}
-        className="w-full h-full block cursor-pointer"
-        onMouseDown={jump}
+        className="w-full h-full block cursor-pointer touch-none"
+        onMouseDown={handleJumpStart}
+        onMouseUp={handleJumpEnd}
+        onMouseLeave={handleJumpEnd}
         onTouchStart={(e) => {
           e.preventDefault()
-          jump()
+          handleJumpStart(e)
         }}
-        onClick={jump}
+        onTouchEnd={(e) => {
+          e.preventDefault()
+          handleJumpEnd(e)
+        }}
+        onTouchCancel={(e) => {
+          e.preventDefault()
+          handleJumpEnd(e)
+        }}
       />
 
       {/* START SCREEN - matching site style */}
@@ -400,14 +620,14 @@ export default function Game() {
             className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm"
           >
             <h2 className="font-pixel text-3xl md:text-5xl text-neon-purple neon-glow-purple mb-4">
-              DEBUG OR DIE
+              HUMAN DASH
             </h2>
             <p className="font-terminal text-xl md:text-2xl text-neon-green mb-8">
-              Press SPACE or TAP to start
+              Press SPACE or TAP to jump
             </p>
             <div className="font-terminal text-lg text-neon-blue mb-4">
-              <p>🧠 = Human Intelligence</p>
-              <p>🐛 = Bugs to avoid</p>
+              <p>🟦 = Jump on platforms</p>
+              <p>🔺 = Avoid spikes</p>
             </div>
             <div className="flex flex-col gap-3">
               <button 
@@ -497,7 +717,12 @@ export default function Game() {
               <p className="font-terminal text-lg text-white mb-4 text-center">
                 Enter your name for the leaderboard:
               </p>
-              <form onSubmit={handleSubmitName} className="space-y-4">
+              <form onSubmit={(e) => {
+                e.preventDefault()
+                saveScore(playerName, score)
+                setShowNameInput(false)
+                setPlayerName('')
+              }} className="space-y-4">
                 <input
                   ref={nameInputRef}
                   type="text"
