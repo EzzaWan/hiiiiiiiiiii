@@ -241,9 +241,17 @@ export default function Home() {
           <p className="font-terminal text-sm sm:text-base md:text-lg text-neon-green mb-2">
             © 2025 hiiiiiiiiiii.com - Human Intelligence Labs
           </p>
-          <p className="font-terminal text-xs sm:text-sm text-neon-purple">
+          <p className="font-terminal text-xs sm:text-sm text-neon-purple mb-3">
             Built with 🤖 and chaotic energy
           </p>
+          <div className="flex justify-center">
+            <a
+              href="/privacy"
+              className="font-terminal text-xs sm:text-sm text-neon-blue hover:text-neon-green underline transition-colors"
+            >
+              Privacy Policy
+            </a>
+          </div>
         </div>
       </footer>
 
